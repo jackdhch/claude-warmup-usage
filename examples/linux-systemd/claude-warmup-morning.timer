@@ -1,0 +1,9 @@
+[Unit]
+Description=Run Claude warmup on weekday mornings
+
+[Timer]
+OnCalendar=Mon..Fri 06:55
+Persistent=true
+
+[Install]
+WantedBy=timers.target

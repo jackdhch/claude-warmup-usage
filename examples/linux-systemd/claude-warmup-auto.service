@@ -1,0 +1,9 @@
+[Unit]
+Description=Claude.ai 5h-window auto-activation (work hours)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# Adjust the path if you cloned elsewhere:
+ExecStart=%h/claude-warmup-usage/.venv/bin/python %h/claude-warmup-usage/claude_warmup_usage.py run --auto

@@ -1,0 +1,21 @@
+# Python / venv
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Runtime artifacts & SECRETS — never commit these
+.serverchan_key
+.claude-warmup-config.json
+.claude-warmup-state.json
+.claude-warmup.log
+.claude-discover.txt
+.claude_profile/
+*.log
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

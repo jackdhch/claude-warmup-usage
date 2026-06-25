@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Claude auto-activation hourly during work hours (09:00-24:00)
+
+[Timer]
+# Fires at the top of every hour from 09:00 to 23:00 local time.
+OnCalendar=*-*-* 09..23:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
