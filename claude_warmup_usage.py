@@ -59,6 +59,9 @@ STATE_FILE = HOME / ".claude-warmup-state.json"
 MAX_PUSHES_PER_DAY = 3
 WORK_START_HOUR = 9     # inclusive
 WORK_END_HOUR = 24      # exclusive -> active for local hours 9..23 (09:00–24:00)
+# Hard floor between our own activations: never send more often than this,
+# regardless of what the usage API reports. The 5-hour window is this long.
+MIN_ACTIVATION_GAP_HOURS = 5
 
 # ============================================================================
 # === CONFIRMED BY `discover` (real values read from live claude.ai) =========
@@ -189,6 +192,31 @@ def pushes_today() -> int:
     return st.get("push_count", 0) if st.get("push_date") == _today() else 0
 
 
+def last_activation_ts() -> str:
+    """ISO timestamp of the last message WE sent to (re)start the window, or ''."""
+    return load_state().get("last_activation", "")
+
+
+def record_activation() -> None:
+    st = load_state()
+    st["last_activation"] = dt.datetime.now().astimezone().isoformat()
+    save_state(st)
+    LOG.info("已记录本次激活时间:%s", st["last_activation"])
+
+
+def hours_since_last_activation() -> float:
+    """Hours since our last activation; large number if never / unparseable."""
+    iso = last_activation_ts()
+    if not iso:
+        return 1e9
+    try:
+        d = dt.datetime.fromisoformat(iso)
+        now = dt.datetime.now(d.tzinfo) if d.tzinfo else dt.datetime.now()
+        return (now - d).total_seconds() / 3600.0
+    except Exception:
+        return 1e9
+
+
 def in_work_hours() -> bool:
     h = dt.datetime.now().hour
     return WORK_START_HOUR <= h < WORK_END_HOUR
@@ -202,10 +230,11 @@ def push_serverchan(title: str, desp: str, bypass_cap: bool = False) -> bool:
     """推送 Server酱 通知,默认受每日 MAX_PUSHES_PER_DAY 次上限约束(按本地日计数,
     所有推送——常规与告警——都计入,符合用户"每天不超过3次"的规则)。
     bypass_cap=True 用于单次手动测试:不受上限限制、也不计入计数。"""
-    # 先做每日上限判断(跨天自动清零)。
+    # 先做每日上限判断(跨天自动清零;就地更新,保留 last_activation 等其它键)。
     st = load_state()
     if st.get("push_date") != _today():
-        st = {"push_date": _today(), "push_count": 0}
+        st["push_date"] = _today()
+        st["push_count"] = 0
     if not bypass_cap and st.get("push_count", 0) >= MAX_PUSHES_PER_DAY:
         LOG.warning("已达每日 Server酱 上限(%d 次),本次不推送:%s",
                     MAX_PUSHES_PER_DAY, title)
@@ -588,22 +617,20 @@ def _reset_in_past(value) -> bool:
 
 
 def needs_activation(data: dict) -> bool:
-    """Does the 5-hour interactive window need a fresh message to (re)start?
+    """是否需要发一条消息来(重新)点亮 5 小时窗口?
 
-    Signals, in order: the 'session' entry in `limits` carries `is_active`
-    (False -> dormant -> needs activation). If that's missing, fall back to
-    five_hour.resets_at being absent or already in the past. When usage can't
-    be read at all we return True (better to warm than to silently skip)."""
+    两道关卡(必须同时满足才返回 True):
+      1) **硬性下限**:距我们上次激活不足 MIN_ACTIVATION_GAP_HOURS 小时 -> 一律 False。
+         这是防"每小时误发"的根本保障,与接口无关。
+      2) 5 小时窗口确实已过期:看 `five_hour.resets_at` 是否已过(或缺失)。
+         注意:**故意不使用 `is_active`** —— 实测它在窗口仍开着(resets_at 在未来)
+         时也会变 False,会导致每小时误激活。
+    """
+    if hours_since_last_activation() < MIN_ACTIVATION_GAP_HOURS:
+        return False
     if not isinstance(data, dict):
-        return True
-    for lim in (data.get("limits") or []):
-        if lim.get("kind") == "session" or lim.get("group") == "session":
-            if lim.get("is_active") is False:
-                return True
-            if lim.get("is_active") is True:
-                return _reset_in_past(lim.get("resets_at"))
-    fh = data.get("five_hour") or {}
-    ra = fh.get("resets_at")
+        return True   # 已过 5h 下限且读不到用量:保守地激活一次
+    ra = (data.get("five_hour") or {}).get("resets_at")
     if not ra:
         return True
     return _reset_in_past(ra)
@@ -780,9 +807,17 @@ def cmd_run(args) -> int:
                      need, (work_ok if auto else "不限"), force, do_send)
             if do_send:
                 sent = send_message(page, message)
+                if sent:
+                    record_activation()      # 记录时间戳,用于"至少间隔5小时"判断
                 data = fetch_usage(page, captured_org, usage_box) or data
             else:
-                reason = "窗口仍活跃,无需激活" if not need else "不在工作时间(9:00–24:00)"
+                gap = hours_since_last_activation()
+                if not need and gap < MIN_ACTIVATION_GAP_HOURS:
+                    reason = f"距上次激活仅 {gap:.1f}h(<{MIN_ACTIVATION_GAP_HOURS}h),无需激活"
+                elif not need:
+                    reason = "5 小时窗口仍活跃,无需激活"
+                else:
+                    reason = "不在工作时间(9:00–24:00)"
                 LOG.info("本次不发送、不推送(%s)。", reason)
                 ctx.close()
                 print("本次无动作:" + reason)

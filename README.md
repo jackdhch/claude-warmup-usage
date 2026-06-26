@@ -81,8 +81,13 @@ Chromium window.
 - **One conversation**: every warmup reuses `config.conversation_url` instead of
   spawning a new chat.
 - **Conditional activation**: `run` / `run --auto` only send a message (and only
-  push) when the 5‑hour window actually needs activation; if it's still active,
-  they do nothing and stay silent. `--force` / `--test` override.
+  push) when the 5‑hour window actually needs activation. "Needs activation" is
+  judged by `five_hour.resets_at` being in the past (NOT the API's `is_active`
+  flag, which flips to `False` even while a window is still open). If it's still
+  active, they do nothing and stay silent. `--force` / `--test` override.
+- **Minimum gap**: a hard floor (`MIN_ACTIVATION_GAP_HOURS`, default **5h**)
+  between our own activations — recorded in state as `last_activation` — so even
+  hourly polling can never message you more than once per 5 hours.
 - **Work hours**: `run --auto` only acts during `09:00–24:00` local time.
 - **Daily push cap**: at most **3** Server酱 pushes per local day
   (`MAX_PUSHES_PER_DAY`); `--test` bypasses it.
@@ -96,7 +101,7 @@ Server酱 key is read from (in order): env `SERVERCHAN_KEY` →
 |---|---|
 | `~/.claude_profile/` | persistent browser profile (login) |
 | `~/.claude-warmup-config.json` | `user_agent`, `org_id`, `conversation_url` |
-| `~/.claude-warmup-state.json` | per‑day push counter |
+| `~/.claude-warmup-state.json` | per‑day push counter + `last_activation` |
 | `~/.serverchan_key` | Server酱 SendKey (chmod 600) |
 | `~/.claude-warmup.log` | run log |
 
@@ -116,7 +121,8 @@ Server酱 key is read from (in order): env `SERVERCHAN_KEY` →
 
 - `bootstrap` 有头登录(只跑一次,支持邮箱验证码 + 2FA;Google 登录常被自动化浏览器拦,改用邮箱验证码)。
 - `run` 仅在窗口需要激活时才发一条最小消息(默认 `ok`),并**复用同一个对话**;读官方 `/usage` 接口拿到 5 小时 + 每周的剩余/重置,推送给你。
-- `run --auto`:仅在 **09:00–24:00** 且窗口休眠时激活。
+- `run --auto`:仅在 **09:00–24:00** 且窗口已过期(看 `resets_at`,**不看会抽风的 `is_active`**)时激活。
+- **硬性下限**:两次激活至少间隔 **5 小时**(`MIN_ACTIVATION_GAP_HOURS`,记录在 `last_activation`),即使每小时轮询也绝不会更频繁地打扰你。
 - 每天 Server酱 推送 **≤ 3 次**(`--test` 不受限、也不计数)。
 - 调度:Windows+WSL 用 `examples/windows-schtasks/`;原生 Linux 用 `examples/linux-systemd/`。
 
