@@ -41,24 +41,49 @@ risk. Don't use it to abuse, share, or resell access.
 
 ## Requirements
 
-- Linux, or **Windows + WSL2** (tested on Ubuntu 24.04 under WSLg).
+- Linux **with a graphical session**, or **Windows + WSL2** (tested on Ubuntu
+  24.04 under WSLg). A display is needed *once*, for the login window.
 - Python 3.10+.
 - A [Server酱](https://sct.ftqq.com/) SendKey (optional; without it, it just logs/prints).
 
-## Install
+## 🚀 Quick start (one command)
 
 ```bash
-git clone https://github.com/<you>/claude-warmup-usage.git
+git clone https://github.com/jackdhch/claude-warmup-usage.git && cd claude-warmup-usage && ./install.sh
+```
+
+`install.sh` creates the venv, installs Playwright + Chromium, optionally saves
+your Server酱 key, then **opens a browser so you log into your own account**.
+When it finishes it prints the one command to set up scheduling for your
+platform. To verify right away:
+
+```bash
+.venv/bin/python claude_warmup_usage.py run --test
+```
+
+> **What can't be one-click:** the login itself. You must sign in with **your
+> own** claude.ai account (email code + 2FA) in the browser window the installer
+> opens — only you can do that. Everything else is automated. On a *headless*
+> server with no display, do `bootstrap` once on a machine that has a display,
+> then copy `~/.claude_profile` over.
+
+<details>
+<summary>Manual install (if you'd rather not use install.sh)</summary>
+
+```bash
+git clone https://github.com/jackdhch/claude-warmup-usage.git
 cd claude-warmup-usage
 python3 -m venv .venv
 . .venv/bin/activate
 pip install -r requirements.txt
 playwright install chromium          # add --with-deps if libs are missing (needs sudo)
+python claude_warmup_usage.py bootstrap
 ```
 
-> On Ubuntu, if `python3 -m venv` complains about `ensurepip`, either
-> `sudo apt install python3-venv`, or create it `--without-pip` and bootstrap
-> with `get-pip.py`.
+On Ubuntu, if `python3 -m venv` complains about `ensurepip`, either
+`sudo apt install python3-venv`, or create it `--without-pip` and bootstrap
+with `get-pip.py`.
+</details>
 
 ## Usage
 
@@ -118,6 +143,13 @@ Server酱 key is read from (in order): env `SERVERCHAN_KEY` →
 
 用**真实浏览器**(Playwright 驱动 claude.ai 网页)给你的 **5 小时交互窗口**保活,并把用量通过 **Server酱**推到手机。
 自 2026‑06‑15 起,API / Agent SDK / ccusage / `claude -p` 走独立自动化计费池,**不点亮交互窗口**、也读不到官方窗口重置值,所以必须走浏览器。
+
+**一键部署(一条命令)**:
+```bash
+git clone https://github.com/jackdhch/claude-warmup-usage.git && cd claude-warmup-usage && ./install.sh
+```
+脚本会建好 venv、装 Playwright + Chromium、(可选)保存 Server酱 key,然后**弹出浏览器让你登录自己的账号**,最后打印对应平台的定时任务命令。
+> 唯一不能自动化的是**登录**:必须你本人用自己的账号(邮箱验证码 + 2FA)在弹出的窗口里登一次——只有你能做。需要图形界面(WSLg 或桌面 Linux)。纯无显示器的服务器:先在有界面的机器上 `bootstrap` 一次,再把 `~/.claude_profile` 拷过去。
 
 - `bootstrap` 有头登录(只跑一次,支持邮箱验证码 + 2FA;Google 登录常被自动化浏览器拦,改用邮箱验证码)。
 - `run` 仅在窗口需要激活时才发一条最小消息(默认 `ok`),并**复用同一个对话**;读官方 `/usage` 接口拿到 5 小时 + 每周的剩余/重置,推送给你。
