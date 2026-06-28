@@ -67,20 +67,23 @@ function barImage(pct, color, w, h) {
 function row(parent, label, pct, prominent) {
   const r = parent.addStack()
   r.centerAlignContent()
-  const lw = r.addStack(); lw.size = new Size(22, 0)
+  const lw = r.addStack(); lw.size = new Size(20, 0)
   const lt = lw.addText(label)
   lt.font = Font.systemFont(prominent ? 13 : 12)
   lt.textColor = prominent ? TXT : MUTED
-  r.addSpacer(6)
-  const bw = 92, bh = prominent ? 12 : 6
+  lt.lineLimit = 1
+  r.addSpacer(5)
+  const bw = 58, bh = prominent ? 12 : 6
   const img = r.addImage(barImage(pct, prominent ? levelColor(pct) : WEEK, bw, bh))
   img.imageSize = new Size(bw, bh)
-  r.addSpacer(6)
-  const vw = r.addStack(); vw.size = new Size(40, 0)
+  r.addSpacer(5)
+  const vw = r.addStack(); vw.size = new Size(46, 0)
   const vt = vw.addText(pct + "%")
-  vt.font = prominent ? Font.semiboldSystemFont(20) : Font.systemFont(13)
+  vt.font = prominent ? Font.semiboldSystemFont(18) : Font.systemFont(13)
   vt.textColor = prominent ? TXT : MUTED
   vt.rightAlignText()
+  vt.lineLimit = 1
+  vt.minimumScaleFactor = 0.6
 }
 
 const d = await getData()

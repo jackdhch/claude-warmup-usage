@@ -27,9 +27,12 @@ struct UsageBar: View {
             }
             .frame(height: prominent ? 12 : 6)
             Text("\(pct)%")
-                .font(.system(size: prominent ? 20 : 13, weight: prominent ? .semibold : .regular))
+                .font(.system(size: prominent ? 19 : 13, weight: prominent ? .semibold : .regular))
                 .foregroundStyle(prominent ? Color.primary : Color.secondary)
-                .frame(width: 44, alignment: .trailing)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: 46, alignment: .trailing)
         }
     }
 }
