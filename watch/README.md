@@ -34,6 +34,10 @@ That's the full-colour card from the mockup, on your iPhone, with zero Xcode.
 
 ## B) Apple Watch — app + widget (needs a Mac with Xcode)
 
+> **Easiest:** run **Claude Code on the Mac** and let it scaffold + compile the
+> project for you — see [`BUILD_ON_MAC.md`](BUILD_ON_MAC.md) for a ready-to-paste
+> prompt. The manual Xcode steps below are the fallback.
+
 > Apple requires a Mac + Xcode to build any native watchOS app — there's no way
 > around it. With a **free** Apple ID the install **expires after 7 days** (just
 > rebuild to renew); a paid Developer account ($99/yr) lasts a year.
