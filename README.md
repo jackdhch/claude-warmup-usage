@@ -158,8 +158,9 @@ it every ~30 minutes on your always‑on machine; the raw URL is saved to
 }
 ```
 
-A native watchOS complication/app (built in Xcode) and a Mac‑free iPhone widget
-(via Scriptable) that read this endpoint are planned under `watch/`.
+Front-ends that read this endpoint live in [`watch/`](watch/): a **Mac-free
+iPhone widget** (Scriptable) and an **Apple Watch app + widget** (Xcode). See
+[`watch/README.md`](watch/README.md) for the step-by-step build/install guide.
 
 ## License
 
