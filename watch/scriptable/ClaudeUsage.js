@@ -25,7 +25,9 @@ function levelColor(p) {
 
 async function getData() {
   try {
-    const req = new Request(GIST_URL)
+    // cache-buster query so GitHub's CDN can't serve a stale copy
+    const url = GIST_URL + (GIST_URL.indexOf("?") >= 0 ? "&" : "?") + "t=" + Date.now()
+    const req = new Request(url)
     req.headers = { "Cache-Control": "no-cache" }
     const j = await req.loadJSON()
     return {

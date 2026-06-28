@@ -24,7 +24,10 @@ private struct UsageDTO: Decodable {
 }
 
 func fetchUsage() async -> UsageData? {
-    guard let url = URL(string: gistURL) else { return nil }
+    // cache-buster query so GitHub's CDN can't serve a stale copy
+    let busted = gistURL + (gistURL.contains("?") ? "&" : "?")
+        + "t=\(Int(Date().timeIntervalSince1970))"
+    guard let url = URL(string: busted) else { return nil }
     var req = URLRequest(url: url)
     req.cachePolicy = .reloadIgnoringLocalCacheData
     req.timeoutInterval = 20
