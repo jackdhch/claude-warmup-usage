@@ -21,6 +21,10 @@ $Wsl    = "C:\Windows\System32\wsl.exe"
 $Tomorrow = (Get-Date).AddDays(1).ToString("yyyy-MM-dd")
 
 function New-WarmupTask($Name, $Args, $TriggerXml, $Wake) {
+  # Launch wsl via a hidden VBScript so no console window flashes on each run.
+  $vbs = "code = CreateObject(""WScript.Shell"").Run(""$Wsl -d $Distro -e bash -lc """"$Python $Script $Args"""""", 0, True)`r`nWScript.Quit(code)"
+  $vbsPath = "$env:USERPROFILE\$Name.vbs"
+  Set-Content -Path $vbsPath -Value $vbs -Encoding ASCII
   $xml = @"
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
@@ -47,8 +51,8 @@ function New-WarmupTask($Name, $Args, $TriggerXml, $Wake) {
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>$Wsl</Command>
-      <Arguments>-d $Distro -e bash -lc "$Python $Script $Args"</Arguments>
+      <Command>C:\Windows\System32\wscript.exe</Command>
+      <Arguments>$vbsPath</Arguments>
     </Exec>
   </Actions>
 </Task>

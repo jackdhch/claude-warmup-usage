@@ -21,6 +21,9 @@ This registers:
 
 ## Notes
 
+- **No console window.** Each task launches `wsl` through a tiny hidden VBScript
+  (`%USERPROFILE%\<TaskName>.vbs`, `Run(…, 0, True)`), so nothing flashes on screen;
+  the script's real exit code is still reported back to Task Scheduler.
 - **LogonType is `InteractiveToken`** → tasks run when you are logged in (a locked
   screen is fine). WSL itself needs your user session, so "run while fully logged
   out" isn't reliable anyway. To attempt it without storing a password, change
