@@ -30,6 +30,7 @@ import json
 import logging
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -54,6 +55,8 @@ DEFAULT_MESSAGE = "ok"
 CONFIG_FILE = HOME / ".claude-warmup-config.json"
 # Mutable per-day state: Server酱 push counter (resets daily).
 STATE_FILE = HOME / ".claude-warmup-state.json"
+# File name inside the GitHub Gist that the watch/iPhone widgets read.
+GIST_FILENAME = "claude_usage.json"
 
 # Server酱 daily push cap, and the work-hours window for --auto activation.
 MAX_PUSHES_PER_DAY = 3
@@ -220,6 +223,77 @@ def hours_since_last_activation() -> float:
 def in_work_hours() -> bool:
     h = dt.datetime.now().hour
     return WORK_START_HOUR <= h < WORK_END_HOUR
+
+
+# ----------------------------------------------------------------------------
+# GitHub Gist publishing (for the Apple Watch / iPhone widgets).
+# Uses the already-authenticated `gh` CLI; no extra token needed.
+# ----------------------------------------------------------------------------
+def _gh_api(method: str, path: str, body: dict | None = None) -> dict:
+    cmd = ["gh", "api", "-X", method, path]
+    stdin = None
+    if body is not None:
+        cmd += ["--input", "-"]
+        stdin = json.dumps(body)
+    r = subprocess.run(cmd, input=stdin, capture_output=True, text=True, timeout=60)
+    if r.returncode != 0:
+        raise RuntimeError(f"gh api {method} {path} 失败: {r.stderr.strip()[:300]}")
+    return json.loads(r.stdout) if r.stdout.strip() else {}
+
+
+def publish_to_gist(payload: dict) -> str:
+    """Write the usage payload to a (secret) Gist via gh; return its raw URL.
+    Creates the gist on first run and remembers its id + raw url in config."""
+    cfg = load_config()
+    gid = cfg.get("gist_id")
+    content = json.dumps(payload, ensure_ascii=False, indent=2)
+    body = {"files": {GIST_FILENAME: {"content": content}}}
+    if gid:
+        _gh_api("PATCH", f"/gists/{gid}", body)
+        raw = cfg.get("gist_raw_url")
+        if not raw:
+            login = (_gh_api("GET", "/user").get("login") or "").strip()
+            raw = f"https://gist.githubusercontent.com/{login}/{gid}/raw/{GIST_FILENAME}"
+            save_config({"gist_raw_url": raw})
+        return raw
+    body["public"] = False
+    body["description"] = "Claude usage (auto-updated by claude-warmup-usage)"
+    resp = _gh_api("POST", "/gists", body)
+    gid = resp.get("id")
+    login = ((resp.get("owner") or {}).get("login") or "").strip()
+    raw = f"https://gist.githubusercontent.com/{login}/{gid}/raw/{GIST_FILENAME}"
+    save_config({"gist_id": gid, "gist_raw_url": raw})
+    LOG.info("已创建 Gist: %s", resp.get("html_url"))
+    return raw
+
+
+def build_widget_payload(data: dict) -> dict:
+    """Compact JSON for the widgets: used/remaining %, reset time + minutes-left."""
+    u = parse_usage_json(data)
+    now = dt.datetime.now().astimezone()
+
+    def block(pct, reset):
+        if pct is None and not reset:
+            return None
+        out = {"used_pct": None, "remaining_pct": None,
+               "resets_at": reset, "resets_in_min": None}
+        if pct is not None:
+            out["used_pct"] = round(float(pct))
+            out["remaining_pct"] = round(100 - float(pct))
+        try:
+            rd = dt.datetime.fromisoformat(str(reset).replace("Z", "+00:00"))
+            out["resets_in_min"] = max(0, int((rd - now).total_seconds() // 60))
+        except Exception:
+            pass
+        return out
+
+    return {
+        "schema": 1,
+        "five_hour": block(u["five_pct"], u["five_reset"]),
+        "seven_day": block(u["week_pct"], u["week_reset"]),
+        "updated_at": now.isoformat(timespec="seconds"),
+        "updated_epoch": int(now.timestamp()),
+    }
 
 
 # ----------------------------------------------------------------------------
@@ -942,6 +1016,73 @@ def send_message(page, message: str) -> bool:
 
 
 # ----------------------------------------------------------------------------
+# Subcommand: publish  (read-only; for the watch/iPhone widgets)
+# ----------------------------------------------------------------------------
+def cmd_publish(args) -> int:
+    """只读抓取当前用量并发布到 Gist —— 不发消息、不消耗 5 小时窗口、不推送 Server酱。"""
+    sync_playwright = _import_playwright()
+    captured_org = [load_config().get("org_id")]
+    usage_box = []
+
+    def on_response(resp):
+        try:
+            u = resp.url
+            m = ORG_RE.search(u)
+            if m and not captured_org[0]:
+                captured_org[0] = m.group(1)
+            ctype = (resp.headers or {}).get("content-type", "")
+            if ("json" in ctype.lower() and "/api/organizations/" in u.lower()
+                    and u.split("?")[0].endswith(USAGE_PATH_SUFFIX)):
+                try:
+                    usage_box.append(json.loads(resp.text()))
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    data = None
+    try:
+        with sync_playwright() as p:
+            ctx = launch_context(p, headed=getattr(args, "headed", False))
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.on("response", on_response)
+
+            # 直连用量接口最快;失败再加载 /new 刷新会话后重试。
+            data = fetch_usage(page, captured_org, usage_box)
+            if data is None:
+                LOG.info("publish:直连失败,改走 /new 后重试")
+                retry(lambda: page.goto(URL_NEW, wait_until="domcontentloaded"),
+                      attempts=2, delay=5, what="打开 /new")
+                time.sleep(3)
+                if looks_logged_out(page):
+                    LOG.error("publish:登录失效,本次不更新 Gist")
+                    ctx.close()
+                    return 2
+                data = fetch_usage(page, captured_org, usage_box)
+            ctx.close()
+    except Exception as e:  # noqa: BLE001
+        LOG.exception("publish 异常:%s", e)
+        return 1
+
+    if data is None:
+        LOG.error("publish:未能读到用量(登录失效或网络),本次不更新 Gist")
+        return 2
+
+    payload = build_widget_payload(data)
+    try:
+        raw = publish_to_gist(payload)
+    except Exception as e:  # noqa: BLE001
+        LOG.error("publish:写 Gist 失败:%s", e)
+        return 3
+
+    LOG.info("publish OK -> %s", raw)
+    print("用量已发布到 Gist(组件读这个地址):")
+    print(raw)
+    print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+# ----------------------------------------------------------------------------
 # CLI
 # ----------------------------------------------------------------------------
 def main(argv=None) -> int:
@@ -960,6 +1101,8 @@ def main(argv=None) -> int:
                     help="无条件发送并推送(忽略是否需要/时段;手动或测试用)")
     pr.add_argument("--test", action="store_true",
                     help="单次测试:模拟早晨预热(强制发送),推送不受每日3次上限限制、也不计数")
+    pp = sub.add_parser("publish", help="只读抓用量并发布到 Gist(供 Apple Watch / iPhone 组件)")
+    pp.add_argument("--headed", action="store_true", help="用可见窗口运行(WSLg)")
 
     args = parser.parse_args(argv)
     LOG.info("=== %s 开始 (pid=%s) ===", args.cmd, os.getpid())
@@ -970,6 +1113,8 @@ def main(argv=None) -> int:
             return cmd_discover(args)
         if args.cmd == "run":
             return cmd_run(args)
+        if args.cmd == "publish":
+            return cmd_publish(args)
     except KeyboardInterrupt:
         LOG.warning("已中断")
         return 130

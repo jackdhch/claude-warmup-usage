@@ -94,6 +94,7 @@ python claude_warmup_usage.py run           # activate-if-needed + read usage + 
 python claude_warmup_usage.py run --auto    # only if window dormant AND it's 09:00–24:00
 python claude_warmup_usage.py run --force   # always send + push (counts toward daily cap)
 python claude_warmup_usage.py run --test    # like --force, but bypasses the daily push cap
+python claude_warmup_usage.py publish       # read-only: fetch usage + write to a secret Gist (for widgets)
 ```
 
 **Login note:** Google SSO is often blocked inside automation browsers
@@ -125,7 +126,7 @@ Server酱 key is read from (in order): env `SERVERCHAN_KEY` →
 | Path | Purpose |
 |---|---|
 | `~/.claude_profile/` | persistent browser profile (login) |
-| `~/.claude-warmup-config.json` | `user_agent`, `org_id`, `conversation_url` |
+| `~/.claude-warmup-config.json` | `user_agent`, `org_id`, `conversation_url`, `gist_id`, `gist_raw_url` |
 | `~/.claude-warmup-state.json` | per‑day push counter + `last_activation` |
 | `~/.serverchan_key` | Server酱 SendKey (chmod 600) |
 | `~/.claude-warmup.log` | run log |
@@ -138,6 +139,27 @@ Server酱 key is read from (in order): env `SERVERCHAN_KEY` →
 - **Native Linux** → see [`examples/linux-systemd/`](examples/linux-systemd/):
   user systemd timers (enable `loginctl enable-linger` to run while logged out),
   plus a cron one‑liner.
+
+## Apple Watch / iPhone widgets
+
+`publish` reads usage **read‑only** (no message, no window consumed) and writes a
+small JSON to a **secret GitHub Gist** via the `gh` CLI — so a watch/phone widget
+can fetch it over the internet without any always‑on Mac or self‑hosting. Schedule
+it every ~30 minutes on your always‑on machine; the raw URL is saved to
+`gist_raw_url` in the config.
+
+```jsonc
+{
+  "schema": 1,
+  "five_hour": { "used_pct": 60, "remaining_pct": 40, "resets_at": "…", "resets_in_min": 171 },
+  "seven_day": { "used_pct": 85, "remaining_pct": 15, "resets_at": "…", "resets_in_min": 1971 },
+  "updated_at": "2026-06-28T23:08:47+08:00",
+  "updated_epoch": 1782659327
+}
+```
+
+A native watchOS complication/app (built in Xcode) and a Mac‑free iPhone widget
+(via Scriptable) that read this endpoint are planned under `watch/`.
 
 ## License
 
